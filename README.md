@@ -4,7 +4,7 @@
 [![Algorithm](https://img.shields.io/badge/Algorithm-Barnes--Hut%20%F0%9D%9C%A9(N%20log%20N)-059669.svg?style=flat-square)](https://en.wikipedia.org/wiki/Barnes%E2%80%93Hut_simulation)
 [![Integrator](https://img.shields.io/badge/Integrator-Symplectic%20KDK%20Leapfrog-d97706.svg?style=flat-square)](https://en.wikipedia.org/wiki/Leapfrog_integration)
 [![Multithreading](https://img.shields.io/badge/Concurrency-std%3A%3Athread%20Work--Stealing-2563eb.svg?style=flat-square)](https://en.cppreference.com/w/cpp/thread)
-[![Visualization](https://img.shields.io/badge/Viewer-Interactive%203D%20WebGL-7c3aed.svg?style=flat-square)](results/galaxy_viewer.html)
+[![Visualization](https://img.shields.io/badge/Viewer-Interactive%203D%20WebGL-7c3aed.svg?style=flat-square)](https://barnes-hut-n-body-simulator.vercel.app/)
 [![License](https://img.shields.io/badge/License-MIT-gray.svg?style=flat-square)](LICENSE)
 
 A high-performance $\mathcal{O}(N \log N)$ 3D gravitational N-body astrophysics simulation engine written in modern C++20. Features a vector-backed hierarchical octree spatial decomposition, dynamic thread-pool multithreading, and time-reversible symplectic Kick–Drift–Kick leapfrog integration. Models collisionless galactic encounters from isotropic Plummer clusters and Hernquist halos to inclined multi-component spiral galaxies (exponential stellar disks, bulges, live dark matter halos, and central supermassive black holes) complete with tidal tail resonance, Chandrasekhar dynamical friction, and nuclear coalescence.
@@ -25,7 +25,7 @@ A high-performance $\mathcal{O}(N \log N)$ 3D gravitational N-body astrophysics 
 
 <p align="center">
   <a href="assets/spiral_galaxy_merger_showcase.mp4"><b>▶️ Watch High-Definition MP4 Video (1600x900 @ 24 FPS)</b></a> &nbsp;|&nbsp; 
-  <a href="results/galaxy_viewer.html"><b>🌐 Launch Interactive 3D WebGL Viewer</b></a>
+  <a href="https://barnes-hut-n-body-simulator.vercel.app/"><b>🌐 Launch Interactive 3D WebGL Viewer (Live on Vercel)</b></a>
 </p>
 
 Simulates two inclined spiral galaxies undergoing an eccentric collision. Each galaxy comprises four distinct physical components:

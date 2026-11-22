@@ -1,7 +1,8 @@
 .DS_Store
 build/
 .codex-build/
-results/
+results/*
+!results/galaxy_viewer.html
 *.mp4
 !assets/*.mp4
 !assets/**
