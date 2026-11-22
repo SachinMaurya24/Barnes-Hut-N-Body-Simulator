@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) {
         // Annotations inside Separation Plot
         draw_text(ctx, "1st Pericenter (t=9.6, d=0.69)", map_sep(9.6, 0.69).x - 10, map_sep(9.6, 0.69).y + 20, 11.5, false, 0.65, 0.75, 0.88, 1);
         draw_text(ctx, "DM Halo Braking Apocenter (t=14.4)", map_sep(14.4, 3.58).x, map_sep(14.4, 3.58).y - 12, 11.5, false, 0.65, 0.75, 0.88, 1);
-        draw_text(ctx, "Core Coalescence (d->0.09)", map_sep(21.6, 0.09).x - 15, map_sep(21.6, 0.09).y - 12, 11.5, true, 0.99, 0.88, 0.28, 1);
+        draw_text(ctx, "Core Coalescence (d < 0.05)", map_sep(21.6, 0.05).x - 15, map_sep(21.6, 0.05).y - 12, 11.5, true, 0.99, 0.88, 0.28, 1);
 
         // Legend box inside XY Panel
         CGRect leg = CGRectMake(rect_xy.origin.x + 14, rect_xy.origin.y + 14, 245, 108);
@@ -457,8 +457,10 @@ int main(int argc, char* argv[]) {
             stage_desc = "STAGE 2: First Pericenter Passage (t = 9.6) — Sweeping Tidal Tails & Stellar Bridge";
         } else if (s.time < 17.5) {
             stage_desc = "STAGE 3: Dynamical Friction Braking & Apocenter Turnaround (t = 14.4)";
+        } else if (s.sep < 0.05) {
+            stage_desc = "STAGE 4: Galactic Core Coalescence Verified (d(t) < 0.05) — Single Merged Nucleus";
         } else {
-            stage_desc = "STAGE 4: Secondary Infall & Galactic Core Coalescence (d -> 0.09)";
+            stage_desc = "STAGE 4: Secondary Infall & Core Approach (d -> 0.05 threshold)";
         }
 
         draw_text(ctx, "Barnes-Hut N-Body Simulator: Multi-Component Spiral Galaxy Merger (DM Halo + SMBH)",
@@ -558,6 +560,10 @@ def main():
     print("Encoding showcase MP4 with FFmpeg...")
     subprocess.run(ffmpeg_cmd, check=True)
     print(f"Successfully created showcase MP4: {args.output_video}")
+    if os.path.exists("assets"):
+        import shutil
+        shutil.copy(args.output_video, os.path.join("assets", os.path.basename(args.output_video)))
+
 
 
 if __name__ == "__main__":

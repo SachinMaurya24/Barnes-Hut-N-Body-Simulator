@@ -15,7 +15,22 @@ $(BUILD_DIR)/nbody: $(SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/barnes_hut_simulator: $(SRC) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRC)
 
+benchmark: $(BUILD_DIR)/barnes_hut_simulator
+	./$(BUILD_DIR)/barnes_hut_simulator --benchmark
+
+sweep: $(BUILD_DIR)/barnes_hut_simulator
+	./$(BUILD_DIR)/barnes_hut_simulator --merger-sweep
+
+paper-experiments: all
+	python3 scripts/run_paper_experiments.py
+
+figures:
+	python3 scripts/plot_paper_figures.py
+
+video: $(BUILD_DIR)/barnes_hut_simulator
+	python3 scripts/plot_spiral_showcase.py results/merger_prograde_snapshots.csv --output-video results/spiral_galaxy_merger_showcase.mp4
+
 clean:
 	rm -f $(TARGETS)
 
-.PHONY: all clean
+.PHONY: all clean benchmark sweep paper-experiments figures video

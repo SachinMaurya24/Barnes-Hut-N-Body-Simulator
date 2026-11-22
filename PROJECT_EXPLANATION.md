@@ -147,9 +147,12 @@ This document provides a comprehensive, file-by-file technical breakdown of the 
 ## 5. Main Driver & CLI (`src/main.cpp`)
 
 ### `src/main.cpp`
-* **Role:** Central application orchestrator (~1030 lines).
+* **Role:** Central application orchestrator (~1650 lines).
 * **Supported Simulation Modes:**
-  * `--spiral` / `--disk-merger`: Runs the full 4-component spiral galaxy collision, outputting trajectory snapshots.
+  * `--benchmark`: Stress-test & scaling suite running $\mathcal{O}(N^2)$ direct summation alongside Barnes–Hut ($\theta \in \{0.3, 0.5, 0.7\}$) across $N = 512$ to $16,384+$ particles, logging force error distributions, average node visits, and identifying the crossover point $N_{\rm crit}$.
+  * `--merger-sweep`: Controlled parameter sweep comparing Prograde ($i=0^\circ$) vs Retrograde ($i=180^\circ$) collisions with identical mass and velocity, logging core separation $d(t)$, tidal stripping, and SMBH coalescence time.
+  * `--integrator-test`: Numerical stability test comparing Symplectic Leapfrog vs RK4 vs Forward Euler over 30 eccentric Keplerian orbits.
+  * `--spiral` / `--disk-merger`: Runs the full 4-component spiral galaxy collision, supporting `--prograde`, `--retrograde`, `--inclined`, and octree bounding box export.
   * `--time`, `--dt`, `--particles`, `--separation`: Parameterized Hernquist galactic collision run.
   * `--plummer`: Plummer cluster equilibrium and relaxation test.
   * `--convergence`: Evaluates energy conservation across multiple timesteps ($\Delta t, \Delta t/2, \dots$).

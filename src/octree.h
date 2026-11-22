@@ -21,11 +21,12 @@ public:
         Vec3 center_of_mass{};
         std::array<int, 8> children{{-1, -1, -1, -1, -1, -1, -1, -1}};
         std::vector<std::size_t> particle_indices;
+        std::size_t depth{0};
 
         Node() = default;
 
-        Node(const Vec3& cube_center, double cube_half_width)
-            : center(cube_center), half_width(cube_half_width) {}
+        Node(const Vec3& cube_center, double cube_half_width, std::size_t node_depth = 0)
+            : center(cube_center), half_width(cube_half_width), depth(node_depth) {}
 
         bool is_leaf() const {
             for (int child : children) {
@@ -35,6 +36,24 @@ public:
             }
             return true;
         }
+    };
+
+    struct OctreeStats {
+        std::size_t max_depth{0};
+        std::size_t total_nodes{0};
+        std::size_t leaf_nodes{0};
+        double avg_node_visits_per_particle{0.0};
+        std::size_t min_node_visits{0};
+        std::size_t max_node_visits{0};
+    };
+
+    struct BoundingBox {
+        Vec3 center{};
+        double half_width{0.0};
+        std::size_t depth{0};
+        std::size_t particle_count{0};
+        double mass{0.0};
+        bool is_leaf{false};
     };
 
     explicit Octree(const Bodies& bodies) : bodies_(bodies) {
@@ -76,11 +95,40 @@ public:
         return nodes_;
     }
 
+    std::size_t max_depth() const {
+        return max_depth_;
+    }
+
+    std::size_t total_nodes() const {
+        return nodes_.size();
+    }
+
+    std::vector<BoundingBox> export_bounding_boxes(
+        std::size_t max_depth_limit = 6,
+        std::size_t min_particles = 1) const {
+        std::vector<BoundingBox> boxes;
+        boxes.reserve(nodes_.size());
+        for (const auto& node : nodes_) {
+            if (node.depth <= max_depth_limit) {
+                const std::size_t count = node.particle_indices.size();
+                if (node.is_leaf()) {
+                    if (count >= min_particles) {
+                        boxes.push_back({node.center, node.half_width, node.depth, count, node.mass, true});
+                    }
+                } else {
+                    boxes.push_back({node.center, node.half_width, node.depth, count, node.mass, false});
+                }
+            }
+        }
+        return boxes;
+    }
+
     std::vector<Vec3> accelerations(
         double gravitational_constant,
         double softening_length,
         double theta,
-        std::size_t thread_count = default_thread_count()) const {
+        std::size_t thread_count = default_thread_count(),
+        OctreeStats* out_stats = nullptr) const {
         if (softening_length < 0.0 || theta < 0.0) {
             throw std::invalid_argument("Softening length and theta must be non-negative");
         }
@@ -91,10 +139,41 @@ public:
         const double softening_squared = softening_length * softening_length;
         const double theta_squared = theta * theta;
 
+        std::vector<std::size_t> visits;
+        if (out_stats) {
+            visits.assign(bodies_.positions.size(), 0);
+        }
+
         parallel_for_indices(bodies_.positions.size(), thread_count, [&](std::size_t target) {
+            std::size_t* visit_ptr = out_stats ? &visits[target] : nullptr;
             result[target] = acceleration_for_target(
-                target, gravitational_constant, softening_squared, theta_squared);
+                target, gravitational_constant, softening_squared, theta_squared, visit_ptr);
         });
+
+        if (out_stats) {
+            out_stats->max_depth = max_depth_;
+            out_stats->total_nodes = nodes_.size();
+            std::size_t leaves = 0;
+            for (const auto& node : nodes_) {
+                if (node.is_leaf()) {
+                    ++leaves;
+                }
+            }
+            out_stats->leaf_nodes = leaves;
+            if (!visits.empty()) {
+                double sum = 0.0;
+                std::size_t min_v = visits[0];
+                std::size_t max_v = visits[0];
+                for (std::size_t v : visits) {
+                    sum += static_cast<double>(v);
+                    min_v = std::min(min_v, v);
+                    max_v = std::max(max_v, v);
+                }
+                out_stats->avg_node_visits_per_particle = sum / static_cast<double>(visits.size());
+                out_stats->min_node_visits = min_v;
+                out_stats->max_node_visits = max_v;
+            }
+        }
         return result;
     }
 
@@ -103,6 +182,7 @@ private:
 
     const Bodies& bodies_;
     std::vector<Node> nodes_;
+    std::size_t max_depth_{0};
 
     static std::size_t octant_for(const Vec3& position, const Vec3& center) {
         return (position.x >= center.x ? 1U : 0U)
@@ -110,7 +190,7 @@ private:
             | (position.z >= center.z ? 4U : 0U);
     }
 
-    int create_child(std::size_t parent_index, std::size_t octant) {
+    int create_child(std::size_t parent_index, std::size_t octant, std::size_t child_depth) {
         const Vec3 parent_center = nodes_[parent_index].center;
         const double child_half_width = nodes_[parent_index].half_width * 0.5;
         const Vec3 child_center{
@@ -119,12 +199,13 @@ private:
             parent_center.z + ((octant & 4U) ? child_half_width : -child_half_width),
         };
         const int child_index = static_cast<int>(nodes_.size());
-        nodes_.push_back(Node{child_center, child_half_width});
+        nodes_.push_back(Node{child_center, child_half_width, child_depth});
         nodes_[parent_index].children[octant] = child_index;
         return child_index;
     }
 
     void insert(std::size_t node_index, std::size_t particle, std::size_t depth) {
+        max_depth_ = std::max(max_depth_, depth);
         const bool leaf = nodes_[node_index].is_leaf();
         if (leaf) {
             if (nodes_[node_index].particle_indices.empty()) {
@@ -144,7 +225,7 @@ private:
                     bodies_.positions[existing_particle], nodes_[node_index].center);
                 int child_index = nodes_[node_index].children[octant];
                 if (child_index == -1) {
-                    child_index = create_child(node_index, octant);
+                    child_index = create_child(node_index, octant, depth + 1);
                 }
                 insert(static_cast<std::size_t>(child_index), existing_particle, depth + 1);
             }
@@ -153,7 +234,7 @@ private:
         const std::size_t octant = octant_for(bodies_.positions[particle], nodes_[node_index].center);
         int child_index = nodes_[node_index].children[octant];
         if (child_index == -1) {
-            child_index = create_child(node_index, octant);
+            child_index = create_child(node_index, octant, depth + 1);
         }
         insert(static_cast<std::size_t>(child_index), particle, depth + 1);
     }
@@ -196,7 +277,8 @@ private:
         std::size_t target,
         double gravitational_constant,
         double softening_squared,
-        double theta_squared) const {
+        double theta_squared,
+        std::size_t* node_visits = nullptr) const {
         const Vec3 target_position = bodies_.positions[target];
         Vec3 acceleration{};
 
@@ -211,6 +293,9 @@ private:
 
         while (stack_top > 0) {
             const StackEntry current = stack[--stack_top];
+            if (node_visits) {
+                ++(*node_visits);
+            }
             const Node& node = nodes_[static_cast<std::size_t>(current.node_index)];
             if (node.mass == 0.0) {
                 continue;
@@ -283,9 +368,10 @@ inline std::vector<Vec3> compute_barnes_hut_accelerations(
     double gravitational_constant,
     double softening_length,
     double theta,
-    std::size_t thread_count = default_thread_count()) {
+    std::size_t thread_count = default_thread_count(),
+    Octree::OctreeStats* out_stats = nullptr) {
     const Octree tree(bodies);
-    return tree.accelerations(gravitational_constant, softening_length, theta, thread_count);
+    return tree.accelerations(gravitational_constant, softening_length, theta, thread_count, out_stats);
 }
 
 #endif

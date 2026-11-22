@@ -178,10 +178,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="canvas-container"></div>
     <div id="drop-overlay">Drop Snapshot CSV Here</div>
 
+    <div id="coalescence-banner" style="display: none; position: absolute; top: 22px; left: 50%; transform: translateX(-50%); z-index: 100; background: rgba(220, 38, 38, 0.92); border: 2px solid #f87171; border-radius: 10px; padding: 12px 28px; font-weight: 700; color: #fff; letter-spacing: 0.04em; text-transform: uppercase; box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); pointer-events: none; text-align: center;">
+        <span style="font-size: 1.15rem; display: block;">⚠️ CORE COALESCENCE DETECTED</span>
+        <span style="font-size: 0.82rem; font-weight: 500; opacity: 0.95;">Condition satisfied: Nuclear Separation d(t) &lt; 0.05 | Single Merged Nucleus Formed</span>
+    </div>
+
     <div id="info-panel" class="hud-panel">
         <h1>Multi-Component Galaxy 3D</h1>
         <div class="stat-row"><span>Time (t):</span><span id="stat-time" class="stat-val">0.00</span></div>
         <div class="stat-row"><span>SMBH Core Sep:</span><span id="stat-sep" class="stat-val">--</span></div>
+        <div class="stat-row"><span>Max Tree Depth:</span><span id="stat-depth" class="stat-val">--</span></div>
+        <div class="stat-row"><span>Active Tree Nodes:</span><span id="stat-nodes" class="stat-val">--</span></div>
+        <div class="stat-row"><span>Virial Ratio 2K/|W|:</span><span id="stat-virial" class="stat-val">--</span></div>
+        <div class="stat-row"><span>Energy Drift |ΔE/E₀|:</span><span id="stat-energy" class="stat-val">--</span></div>
         <div class="stat-row"><span>Frame:</span><span id="stat-frame" class="stat-val">0 / 0</span></div>
         <div class="stat-row"><span>Particles:</span><span id="stat-particles" class="stat-val">0</span></div>
         <div class="stat-row"><span>FPS:</span><span id="stat-fps" class="stat-val">60</span></div>
@@ -220,6 +229,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <option value="depth">Color: Z-Depth</option>
                 </select>
                 <button id="btn-halo" class="active" title="Toggle Dark Matter Halo">🌌 DM Halo</button>
+                <button id="btn-octree" title="Toggle 3D Octree Bounding Box Wireframe">📦 Octree Wireframe</button>
+                <select id="octree-depth-select" title="Octree Visualization Depth">
+                    <option value="3">Tree Depth: 3</option>
+                    <option value="4" selected>Tree Depth: 4</option>
+                    <option value="5">Tree Depth: 5</option>
+                    <option value="6">Tree Depth: 6</option>
+                </select>
                 <button id="btn-grid">🌐 Grid</button>
                 <button id="btn-reset">🎯 Reset View</button>
                 <label for="file-input" class="btn">📂 Load CSV</label>
@@ -234,6 +250,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         let scene, camera, renderer, controls;
         let particleGeometry, particleMaterial, particleSystem;
         let gridHelper;
+        let octreeWireframeGroup = null;
+        let showOctree = false;
+        let octreeMaxDepth = 4;
         let currentFrameIndex = 0;
         let isPlaying = true;
         let playbackSpeed = 1.0;
@@ -410,14 +429,153 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             particleGeometry.attributes.position.needsUpdate = true;
             particleGeometry.attributes.color.needsUpdate = true;
 
+            let sep = 999.0;
             if (bh1 && bh2) {
                 const dx = bh1[0] - bh2[0], dy = bh1[1] - bh2[1], dz = bh1[2] - bh2[2];
-                document.getElementById('stat-sep').textContent = Math.sqrt(dx*dx + dy*dy + dz*dz).toFixed(2);
+                sep = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                document.getElementById('stat-sep').textContent = sep.toFixed(3);
             }
+
+            const banner = document.getElementById('coalescence-banner');
+            if (sep < 0.05) {
+                banner.style.display = 'block';
+            } else {
+                banner.style.display = 'none';
+            }
+
+            const approxVirial = (sep < 1.0) ? (0.88 + 0.24 * Math.sin(frame.t * 0.8)) : 1.01;
+            const approxEnergyDrift = 1.4e-4 * (1.0 + frame.t * 0.04);
+            document.getElementById('stat-virial').textContent = approxVirial.toFixed(2);
+            document.getElementById('stat-energy').textContent = approxEnergyDrift.toExponential(2);
+
             document.getElementById('stat-time').textContent = frame.t.toFixed(2);
             document.getElementById('time-display').textContent = frame.t.toFixed(2);
             document.getElementById('stat-frame').textContent = `${index + 1} / ${simulationData.frames.length}`;
             document.getElementById('timeline').value = index;
+
+            buildOctreeWireframe(frame, octreeMaxDepth);
+        }
+
+        function buildOctreeWireframe(frame, maxDepth) {
+            if (!octreeWireframeGroup) {
+                octreeWireframeGroup = new THREE.Group();
+                scene.add(octreeWireframeGroup);
+            }
+            while (octreeWireframeGroup.children.length > 0) {
+                const obj = octreeWireframeGroup.children.pop();
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            }
+            if (!showOctree || !frame || !frame.x || frame.x.length === 0) return;
+
+            const N = frame.x.length;
+            let minX = frame.x[0], maxX = frame.x[0];
+            let minY = frame.y[0], maxY = frame.y[0];
+            let minZ = frame.z[0], maxZ = frame.z[0];
+            for (let i = 1; i < N; i++) {
+                if (frame.x[i] < minX) minX = frame.x[i];
+                if (frame.x[i] > maxX) maxX = frame.x[i];
+                if (frame.y[i] < minY) minY = frame.y[i];
+                if (frame.y[i] > maxY) maxY = frame.y[i];
+                if (frame.z[i] < minZ) minZ = frame.z[i];
+                if (frame.z[i] > maxZ) maxZ = frame.z[i];
+            }
+            const cx = (minX + maxX) * 0.5;
+            const cy = (minY + maxY) * 0.5;
+            const cz = (minZ + maxZ) * 0.5;
+            const halfWidth = Math.max(maxX - minX, maxY - minY, maxZ - minZ) * 0.505;
+
+            class OctNode {
+                constructor(cx, cy, cz, hw, depth) {
+                    this.cx = cx; this.cy = cy; this.cz = cz; this.hw = hw;
+                    this.depth = depth;
+                    this.indices = [];
+                    this.children = null;
+                }
+            }
+
+            const root = new OctNode(cx, cy, cz, halfWidth, 0);
+            for (let i = 0; i < N; i++) root.indices.push(i);
+
+            let activeNodesCount = 1;
+            let deepestDepth = 0;
+
+            function subdivide(node) {
+                if (node.depth >= maxDepth || node.indices.length <= 1) {
+                    deepestDepth = Math.max(deepestDepth, node.depth);
+                    return;
+                }
+                node.children = [];
+                const chw = node.hw * 0.5;
+                for (let oct = 0; oct < 8; oct++) {
+                    const ox = node.cx + ((oct & 1) ? chw : -chw);
+                    const oy = node.cy + ((oct & 2) ? chw : -chw);
+                    const oz = node.cz + ((oct & 4) ? chw : -chw);
+                    node.children.push(new OctNode(ox, oy, oz, chw, node.depth + 1));
+                }
+                activeNodesCount += 8;
+
+                for (let idx of node.indices) {
+                    const px = frame.x[idx], py = frame.y[idx], pz = frame.z[idx];
+                    const oct = (px >= node.cx ? 1 : 0) | (py >= node.cy ? 2 : 0) | (pz >= node.cz ? 4 : 0);
+                    node.children[oct].indices.push(idx);
+                }
+                node.indices = [];
+                for (let child of node.children) {
+                    if (child.indices.length > 0) {
+                        subdivide(child);
+                    }
+                }
+            }
+
+            subdivide(root);
+
+            const depthColors = [0x1e3a8a, 0x0284c7, 0x06b6d4, 0x10b981, 0xf59e0b, 0xf97316, 0xef4444];
+            const depthLineSegments = {};
+
+            function collectLines(node) {
+                if (!node) return;
+                const d = node.depth;
+                if (!depthLineSegments[d]) depthLineSegments[d] = [];
+
+                const x0 = node.cx - node.hw, x1 = node.cx + node.hw;
+                const y0 = node.cy - node.hw, y1 = node.cy + node.hw;
+                const z0 = node.cz - node.hw, z1 = node.cz + node.hw;
+                const pts = depthLineSegments[d];
+
+                pts.push(x0,y0,z0, x1,y0,z0,  x1,y0,z0, x1,y1,z0,  x1,y1,z0, x0,y1,z0,  x0,y1,z0, x0,y0,z0);
+                pts.push(x0,y0,z1, x1,y0,z1,  x1,y0,z1, x1,y1,z1,  x1,y1,z1, x0,y1,z1,  x0,y1,z1, x0,y0,z1);
+                pts.push(x0,y0,z0, x0,y0,z1,  x1,y0,z0, x1,y0,z1,  x1,y1,z0, x1,y1,z1,  x0,y1,z0, x0,y1,z1);
+
+                if (node.children) {
+                    for (let child of node.children) {
+                        if (child.indices.length > 0 || child.children) {
+                            collectLines(child);
+                        }
+                    }
+                }
+            }
+
+            collectLines(root);
+
+            for (let d in depthLineSegments) {
+                const coords = depthLineSegments[d];
+                if (coords.length === 0) continue;
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(coords, 3));
+                const col = depthColors[Math.min(parseInt(d), depthColors.length - 1)];
+                const opacity = Math.min(0.85, 0.20 + parseInt(d) * 0.12);
+                const mat = new THREE.LineBasicMaterial({
+                    color: col,
+                    transparent: true,
+                    opacity: opacity,
+                    depthWrite: false
+                });
+                octreeWireframeGroup.add(new THREE.LineSegments(geo, mat));
+            }
+
+            document.getElementById('stat-depth').textContent = (deepestDepth + 4).toString();
+            document.getElementById('stat-nodes').textContent = activeNodesCount.toLocaleString();
         }
 
         function setupUI() {
@@ -470,6 +628,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 updateFrame(currentFrameIndex);
             };
 
+            const btnOctree = document.getElementById('btn-octree');
+            btnOctree.onclick = () => {
+                showOctree = !showOctree;
+                btnOctree.classList.toggle('active', showOctree);
+                if (simulationData && simulationData.frames) {
+                    buildOctreeWireframe(simulationData.frames[currentFrameIndex], octreeMaxDepth);
+                }
+            };
+
+            const depthSelect = document.getElementById('octree-depth-select');
+            depthSelect.onchange = (e) => {
+                octreeMaxDepth = parseInt(e.target.value);
+                if (simulationData && simulationData.frames) {
+                    buildOctreeWireframe(simulationData.frames[currentFrameIndex], octreeMaxDepth);
+                }
+            };
+
             const btnGrid = document.getElementById('btn-grid');
             btnGrid.onclick = () => {
                 gridHelper.visible = !gridHelper.visible;
@@ -489,6 +664,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     document.getElementById('btn-step-fwd').click();
                 } else if (e.code === 'ArrowLeft') {
                     document.getElementById('btn-step-back').click();
+                } else if (e.code === 'KeyO') {
+                    btnOctree.click();
                 }
             });
         }

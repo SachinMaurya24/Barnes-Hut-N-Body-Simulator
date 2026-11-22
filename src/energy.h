@@ -78,4 +78,62 @@ inline double compute_total_energy(
             bodies, gravitational_constant, softening_length, thread_count);
 }
 
+inline double compute_virial_ratio(
+    const Bodies& bodies,
+    double gravitational_constant,
+    double softening_length,
+    std::size_t thread_count = default_thread_count()) {
+    const double K = compute_kinetic_energy(bodies);
+    const double W = std::abs(compute_softened_potential_energy(
+        bodies, gravitational_constant, softening_length, thread_count));
+    return W > 1.0e-12 ? (2.0 * K / W) : 0.0;
+}
+
+inline double compute_unbound_fraction(
+    const Bodies& bodies,
+    double gravitational_constant,
+    double softening_length,
+    int target_component = -1,
+    std::size_t thread_count = default_thread_count()) {
+    const std::size_t N = bodies.positions.size();
+    if (N == 0) return 0.0;
+    const double softening_squared = softening_length * softening_length;
+
+    std::vector<int> is_unbound(N, 0);
+    std::size_t target_count = 0;
+
+    for (std::size_t i = 0; i < N; ++i) {
+        if (target_component == -1 || (i < bodies.components.size() && bodies.components[i] == target_component)) {
+            ++target_count;
+        }
+    }
+    if (target_count == 0) return 0.0;
+
+    parallel_for_indices(N, thread_count, [&](std::size_t i) {
+        if (target_component != -1 && i < bodies.components.size() && bodies.components[i] != target_component) {
+            return;
+        }
+        const Vec3 v = bodies.velocities[i];
+        const double specific_kinetic = 0.5 * (v.x * v.x + v.y * v.y + v.z * v.z);
+        double specific_potential = 0.0;
+        const Vec3 pos_i = bodies.positions[i];
+
+        for (std::size_t j = 0; j < N; ++j) {
+            if (i == j) continue;
+            const Vec3 d = bodies.positions[j] - pos_i;
+            const double dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z + softening_squared);
+            specific_potential -= gravitational_constant * bodies.masses[j] / dist;
+        }
+        if (specific_kinetic + specific_potential > 0.0) {
+            is_unbound[i] = 1;
+        }
+    });
+
+    std::size_t unbound_count = 0;
+    for (int u : is_unbound) {
+        unbound_count += static_cast<std::size_t>(u);
+    }
+    return static_cast<double>(unbound_count) / static_cast<double>(target_count);
+}
+
 #endif

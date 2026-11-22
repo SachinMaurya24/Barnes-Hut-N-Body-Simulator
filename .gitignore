@@ -3,3 +3,5 @@ build/
 .codex-build/
 results/
 *.mp4
+!assets/*.mp4
+!assets/**

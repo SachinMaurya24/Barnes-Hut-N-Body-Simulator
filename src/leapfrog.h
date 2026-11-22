@@ -22,12 +22,13 @@ inline void compute_accelerations(
     double gravitational_constant,
     double softening_length,
     std::size_t thread_count,
-    double theta) {
+    double theta,
+    Octree::OctreeStats* out_stats = nullptr) {
     if (solver == ForceSolver::Direct) {
         compute_direct_accelerations(bodies, gravitational_constant, softening_length, thread_count);
     } else {
         bodies.accelerations = compute_barnes_hut_accelerations(
-            bodies, gravitational_constant, softening_length, theta, thread_count);
+            bodies, gravitational_constant, softening_length, theta, thread_count, out_stats);
     }
 }
 
@@ -38,10 +39,11 @@ inline void leapfrog_step(
     double softening_length,
     std::size_t thread_count = default_thread_count(),
     ForceSolver solver = ForceSolver::Direct,
-    double theta = 0.5) {
+    double theta = 0.5,
+    Octree::OctreeStats* out_stats = nullptr) {
     if (bodies.accelerations.size() != bodies.positions.size()) {
         compute_accelerations(
-            bodies, solver, gravitational_constant, softening_length, thread_count, theta);
+            bodies, solver, gravitational_constant, softening_length, thread_count, theta, out_stats);
     }
 
     const double half_timestep = 0.5 * timestep;
@@ -51,7 +53,7 @@ inline void leapfrog_step(
     }
 
     compute_accelerations(
-        bodies, solver, gravitational_constant, softening_length, thread_count, theta);
+        bodies, solver, gravitational_constant, softening_length, thread_count, theta, out_stats);
 
     for (std::size_t i = 0; i < bodies.velocities.size(); ++i) {
         bodies.velocities[i] += bodies.accelerations[i] * half_timestep;
