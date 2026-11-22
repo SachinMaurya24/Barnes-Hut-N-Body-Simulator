@@ -39,7 +39,7 @@ Simulates two inclined spiral galaxies undergoing an eccentric collision. Each g
   <img src="assets/spiral_merger_coalescence.png" width="49%" alt="Final Core Coalescence & Remnant" />
 </p>
 <p align="center">
-  <em>Left: First pericenter encounter ($t \approx 9.6$) producing sweeping resonant tidal tails and an intergalactic stellar bridge. Right: Orbital braking via dynamical friction leading to complete coalescence into an elliptical remnant ($t \approx 22.0$).</em>
+  <em>Left: First pericenter encounter (approx 9.6) producing sweeping resonant tidal tails and an intergalactic stellar bridge. Right: Orbital braking via dynamical friction leading to complete coalescence into an elliptical remnant (approx 22.0).</em>
 </p>
 
 ---
